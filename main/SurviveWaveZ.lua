@@ -1,9 +1,9 @@
 --[[
-	SCRIPT KHUSUS: MAGNET DROP COLLECTOR
-	Logika Baru:
-	1. Hanya mengambil benda yang DIAM (Velocity 0). Peluru/VFX bergerak, jadi tidak akan terambil.
-	2. Hanya mengambil benda KECIL (Size < 5).
-	3. Aman dari Map & Zombie.
+	SCRIPT FIX: SURVIVE WAVE Z (Final Correction)
+	Fixes:
+	1. AUTO COLLECT: Explicitly ignores 'workspace.ServerZombies' (Dijamin Zombie tidak tertarik).
+	2. BLACKLIST: Membuang efek peluru, darah, dan sampah visual.
+	3. AUTO REVIVE: Tetap menggunakan versi V6 yang sudah works.
 ]]
 
 if game:GetService("CoreGui"):FindFirstChild("ToraScript") then
@@ -11,26 +11,27 @@ if game:GetService("CoreGui"):FindFirstChild("ToraScript") then
 end
 
 local lib = loadstring(game:HttpGet("https://raw.githubusercontent.com/liebertsx/Tora-Library/main/src/librarynew", true))()
-local win = lib:CreateWindow("Survive Wave Z (Magnet)")
+local win = lib:CreateWindow("Survive Wave Z (Fixed)")
 
 local Players = game:GetService("Players")
 local LocalPlayer = Players.LocalPlayer
 local Workspace = game:GetService("Workspace")
-local RunService = game:GetService("RunService")
 
 -- == 1. ZOMBIE BRING == --
 local dist = 6
 win:AddSlider({text="Jarak Zombie",min=2,max=20,value=6,callback=function(v) dist=v end})
 
 local bringOn = false
-win:AddToggle({text="Tarik Zombie (Bring)",callback=function(t)
+win:AddToggle({text="Bring Mobs (Tarik Zombie)",callback=function(t)
     bringOn = t
     if t then
         spawn(function()
             while bringOn do
                 task.wait()
                 pcall(function()
-                    for _,z in pairs(workspace.ServerZombies:GetDescendants()) do
+                    -- Kita hanya loop folder ServerZombies agar efisien
+                    local folder = workspace:FindFirstChild("ServerZombies") or workspace
+                    for _,z in pairs(folder:GetDescendants()) do
                         if not bringOn then break end
                         if z.Name=="Humanoid" and z.Health>0 and z.RootPart then
                             if LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart") then
@@ -42,9 +43,9 @@ win:AddToggle({text="Tarik Zombie (Bring)",callback=function(t)
                 end)
                 task.wait(0.15)
             end
-            -- Lepas zombie saat fitur mati
             pcall(function()
-                for _,z in pairs(workspace.ServerZombies:GetDescendants()) do
+                local folder = workspace:FindFirstChild("ServerZombies") or workspace
+                for _,z in pairs(folder:GetDescendants()) do
                     if z.Name=="Humanoid" and z.RootPart then z.RootPart.Anchored=false end
                 end
             end)
@@ -74,40 +75,48 @@ win:AddToggle({text="Auto Shoot",callback=function(t)
     end
 end})
 
--- == 3. AUTO COLLECT (MAGNET SYSTEM) == --
+-- == 3. AUTO COLLECT (STRICT FILTER) == --
 local collectOn = false
-win:AddToggle({text="Auto Collect (Magnet)",callback=function(t)
+win:AddToggle({text="Auto Collect (Anti-Sampah)",callback=function(t)
     collectOn = t
     if t then
         spawn(function()
             while collectOn do
-                task.wait(0.1) -- Cek sangat cepat
+                task.wait(0.1) -- Loop cepat
                 pcall(function()
+                    -- Ambil semua benda di workspace
                     for _,p in pairs(Workspace:GetDescendants()) do
                         if not collectOn then break end
                         
-                        -- SYARAT 1: Benda Fisik, Tidak Anchored, Bukan Terrain
-                        if p:IsA("BasePart") and not p.Anchored and p.Name ~= "Terrain" then
+                        -- == FILTER 1: Harus Benda Fisik & Unanchored (Drop Item pasti jatuh) ==
+                        if p:IsA("BasePart") and not p.Anchored then
                             
-                            -- SYARAT 2: UKURAN (Item drop pasti kecil)
-                            if p.Size.Magnitude > 6 then continue end -- Jangan ambil benda besar
+                            -- == FILTER 2 (PENTING): JANGAN AMBIL ZOMBIE! ==
+                            -- Cek apakah benda ini adalah anak dari folder ServerZombies
+                            if p:IsDescendantOf(workspace.ServerZombies) then continue end
+                            
+                            -- == FILTER 3: JANGAN AMBIL PLAYER SENDIRI ==
+                            if LocalPlayer.Character and p:IsDescendantOf(LocalPlayer.Character) then continue end
 
-                            -- SYARAT 3: ANTI-MAKHLUK HIDUP (Jangan ambil tangan/kaki zombie/player)
-                            if p.Parent:FindFirstChild("Humanoid") or p.Parent.Parent:FindFirstChild("Humanoid") then
-                                continue 
-                            end
-
-                            -- SYARAT 4 (KUNCI): KECEPATAN (Velocity)
-                            -- Item Drop itu DIAM di tanah. Peluru/VFX itu BERGERAK CEPAT.
-                            -- Jika kecepatan benda mendekati 0, berarti itu ITEM.
-                            if p.AssemblyLinearVelocity.Magnitude < 1.0 then 
+                            -- == FILTER 4: BLACKLIST NAMA (Buang Sampah Visual) ==
+                            local lowName = p.Name:lower()
+                            if lowName == "terrain" or lowName == "baseplate" then continue end
+                            if lowName:find("bullet") then continue end -- Buang peluru
+                            if lowName:find("shell") then continue end  -- Buang selongsong
+                            if lowName:find("blood") then continue end  -- Buang darah
+                            if lowName:find("debris") then continue end -- Buang puing
+                            if lowName:find("effect") then continue end -- Buang efek
+                            if lowName:find("beam") then continue end   -- Buang laser
+                            
+                            -- == FILTER 5: KECEPATAN & UKURAN ==
+                            -- Item drop itu DIAM (Velocity ~ 0) dan KECIL.
+                            -- Peluru/VFX bergerak (Velocity > 0).
+                            if p.AssemblyLinearVelocity.Magnitude < 1.0 and p.Size.Magnitude < 5 then
                                 
-                                -- TELEPORT ITEM KE BADAN KITA (Efek Magnet Instan)
+                                -- ACTION: Teleport ke Player
                                 if LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart") then
                                     p.CFrame = LocalPlayer.Character.HumanoidRootPart.CFrame
-                                    
-                                    -- Reset velocity biar itemnya gak mental
-                                    p.AssemblyLinearVelocity = Vector3.new(0,0,0) 
+                                    p.AssemblyLinearVelocity = Vector3.new(0,0,0) -- Matikan physics biar gak mental
                                 end
                             end
                         end
@@ -118,41 +127,31 @@ win:AddToggle({text="Auto Collect (Magnet)",callback=function(t)
     end
 end})
 
--- == FITUR BANTUAN: SCAN NAMA ITEM == --
--- Gunakan ini kalau masih bingung item apa yang belum keambil
-win:AddButton({text="[SCAN] Cek Nama Item Dekat", callback=function()
-    local found = false
-    print("--- MULAI SCAN ---")
-    if LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart") then
-        local myPos = LocalPlayer.Character.HumanoidRootPart.Position
-        for _, p in pairs(Workspace:GetDescendants()) do
-            if p:IsA("BasePart") and not p.Anchored and p.Name ~= "Terrain" then
-                -- Cari benda kecil unanchored dalam radius 10 meter
-                if (p.Position - myPos).Magnitude < 15 and p.Size.Magnitude < 6 then
-                    if not p.Parent:FindFirstChild("Humanoid") then
-                         -- Kirim Notifikasi ke Layar
-                         game:GetService("StarterGui"):SetCore("SendNotification", {
-                            Title = "Item Ditemukan!",
-                            Text = "Nama: " .. p.Name .. " | Parent: " .. p.Parent.Name,
-                            Duration = 5
-                        })
-                        print("ITEM: " .. p.Name .. " (di dalam folder: " .. p.Parent.Name .. ")")
-                        found = true
-                    end
-                end
-            end
+-- == SCAN TOOL (Jarak Jauh) == --
+win:AddButton({text="[DEBUG] Cek Nama Item (Jauh)", callback=function()
+    print("--- SCAN START ---")
+    local myPos = LocalPlayer.Character.HumanoidRootPart.Position
+    -- Scan radius 30 (lebih jauh biar item gak keburu ketarik magnet game)
+    for _, p in pairs(Workspace:GetDescendants()) do
+        if p:IsA("BasePart") and not p.Anchored and not p:IsDescendantOf(workspace.ServerZombies) and not p:IsDescendantOf(LocalPlayer.Character) then
+             if (p.Position - myPos).Magnitude < 30 and p.Size.Magnitude < 5 then
+                 -- Filter nama sampah umum
+                 local ln = p.Name:lower()
+                 if not (ln:find("bullet") or ln:find("blood") or ln:find("shell")) then
+                     print("ITEM FOUND: Name=[" .. p.Name .. "] | Parent=[" .. p.Parent.Name .. "]")
+                     game:GetService("StarterGui"):SetCore("SendNotification", {
+                        Title = "Item: " .. p.Name,
+                        Text = "Parent: " .. p.Parent.Name,
+                        Duration = 5
+                    })
+                 end
+             end
         end
-    end
-    if not found then
-        game:GetService("StarterGui"):SetCore("SendNotification", {
-            Title = "Scan Selesai",
-            Text = "Tidak ada item drop di dekatmu.",
-            Duration = 3
-        })
     end
 end})
 
--- == 4. AUTO REVIVE V6 (Final Responsive) == --
+
+-- == 4. AUTO REVIVE (V6 - Fix Responsive) == --
 local reviveOn = false
 win:AddToggle({text="Auto Revive (Fix)", callback=function(t)
     reviveOn = t
@@ -207,7 +206,7 @@ win:AddToggle({text="Auto Revive (Fix)", callback=function(t)
     end
 end})
 
--- == 5. EXTRAS == --
+-- == EXTRAS == --
 win:AddSlider({text="HipHeight",min=2,max=50,value=2,callback=function(v)
     if LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("Humanoid") then
         LocalPlayer.Character.Humanoid.HipHeight = v
@@ -278,5 +277,5 @@ win:AddToggle({text="Fly (WASD)",callback=function(t)
     if t then fly() end
 end})
 
-win:AddLabel({text="Magnet Collect + Fix Revive"})
+win:AddLabel({text="Fixed Collect Logic"})
 lib:Init()
