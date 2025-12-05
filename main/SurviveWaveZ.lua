@@ -1,9 +1,9 @@
 --[[
-	FINAL SCRIPT: SURVIVE WAVE Z
-	Features:
-	1. SMART AUTO COLLECT: Hanya ambil Screw, Medkit, & Loot Box. Anti-VFX/Peluru.
-	2. AUTO REVIVE V6: Anti-Void, Responsive, & Works on Delta/PC.
-	3. SAFE FARM: Bring mobs dengan pcall agar tidak error.
+	SCRIPT KHUSUS: MAGNET DROP COLLECTOR
+	Logika Baru:
+	1. Hanya mengambil benda yang DIAM (Velocity 0). Peluru/VFX bergerak, jadi tidak akan terambil.
+	2. Hanya mengambil benda KECIL (Size < 5).
+	3. Aman dari Map & Zombie.
 ]]
 
 if game:GetService("CoreGui"):FindFirstChild("ToraScript") then
@@ -11,18 +11,19 @@ if game:GetService("CoreGui"):FindFirstChild("ToraScript") then
 end
 
 local lib = loadstring(game:HttpGet("https://raw.githubusercontent.com/liebertsx/Tora-Library/main/src/librarynew", true))()
-local win = lib:CreateWindow("Survive Wave Z (Final)")
+local win = lib:CreateWindow("Survive Wave Z (Magnet)")
 
 local Players = game:GetService("Players")
 local LocalPlayer = Players.LocalPlayer
 local Workspace = game:GetService("Workspace")
+local RunService = game:GetService("RunService")
 
 -- == 1. ZOMBIE BRING == --
 local dist = 6
-win:AddSlider({text="Zombie Distance",min=2,max=20,value=6,callback=function(v) dist=v end})
+win:AddSlider({text="Jarak Zombie",min=2,max=20,value=6,callback=function(v) dist=v end})
 
 local bringOn = false
-win:AddToggle({text="Bring Mobs",callback=function(t)
+win:AddToggle({text="Tarik Zombie (Bring)",callback=function(t)
     bringOn = t
     if t then
         spawn(function()
@@ -41,6 +42,7 @@ win:AddToggle({text="Bring Mobs",callback=function(t)
                 end)
                 task.wait(0.15)
             end
+            -- Lepas zombie saat fitur mati
             pcall(function()
                 for _,z in pairs(workspace.ServerZombies:GetDescendants()) do
                     if z.Name=="Humanoid" and z.RootPart then z.RootPart.Anchored=false end
@@ -72,45 +74,41 @@ win:AddToggle({text="Auto Shoot",callback=function(t)
     end
 end})
 
--- == 3. SMART AUTO COLLECT (Fix VFX & Sampah) == --
+-- == 3. AUTO COLLECT (MAGNET SYSTEM) == --
 local collectOn = false
-win:AddToggle({text="Auto Collect (Loot Only)",callback=function(t)
+win:AddToggle({text="Auto Collect (Magnet)",callback=function(t)
     collectOn = t
     if t then
         spawn(function()
             while collectOn do
-                task.wait(0.2)
+                task.wait(0.1) -- Cek sangat cepat
                 pcall(function()
-                    -- Scan seluruh workspace
                     for _,p in pairs(Workspace:GetDescendants()) do
                         if not collectOn then break end
                         
-                        -- Syarat 1: Harus BasePart dan TIDAK Anchored (Item drop pasti unanchored)
-                        if p:IsA("BasePart") and not p.Anchored then
+                        -- SYARAT 1: Benda Fisik, Tidak Anchored, Bukan Terrain
+                        if p:IsA("BasePart") and not p.Anchored and p.Name ~= "Terrain" then
                             
-                            -- Syarat 2: Filter Nama (Hanya ambil yang penting)
-                            local n = p.Name:lower()
-                            local parentN = p.Parent.Name:lower()
-                            local isLoot = false
+                            -- SYARAT 2: UKURAN (Item drop pasti kecil)
+                            if p.Size.Magnitude > 6 then continue end -- Jangan ambil benda besar
 
-                            -- WHITELIST: Masukkan nama item game disini
-                            if n:find("screw") or parentN:find("screw") then isLoot = true end
-                            if n:find("coin") or parentN:find("coin") then isLoot = true end
-                            if n:find("medkit") or parentN:find("medkit") or n:find("health") then isLoot = true end
-                            if n:find("crate") or parentN:find("crate") or n:find("box") then isLoot = true end
-                            if n:find("ammo") or parentN:find("ammo") then isLoot = true end
-                            
-                            -- Jika bukan loot, skip (Ini akan memfilter VFX peluru/darah)
-                            if not isLoot then continue end
-
-                            -- Syarat 3: Anti-Magnet (Jangan ambil bagian tubuh Zombie/Player)
+                            -- SYARAT 3: ANTI-MAKHLUK HIDUP (Jangan ambil tangan/kaki zombie/player)
                             if p.Parent:FindFirstChild("Humanoid") or p.Parent.Parent:FindFirstChild("Humanoid") then
                                 continue 
                             end
 
-                            -- Eksekusi Teleport Item
-                            if LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart") then
-                                p.CFrame = LocalPlayer.Character.HumanoidRootPart.CFrame
+                            -- SYARAT 4 (KUNCI): KECEPATAN (Velocity)
+                            -- Item Drop itu DIAM di tanah. Peluru/VFX itu BERGERAK CEPAT.
+                            -- Jika kecepatan benda mendekati 0, berarti itu ITEM.
+                            if p.AssemblyLinearVelocity.Magnitude < 1.0 then 
+                                
+                                -- TELEPORT ITEM KE BADAN KITA (Efek Magnet Instan)
+                                if LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart") then
+                                    p.CFrame = LocalPlayer.Character.HumanoidRootPart.CFrame
+                                    
+                                    -- Reset velocity biar itemnya gak mental
+                                    p.AssemblyLinearVelocity = Vector3.new(0,0,0) 
+                                end
                             end
                         end
                     end
@@ -120,7 +118,41 @@ win:AddToggle({text="Auto Collect (Loot Only)",callback=function(t)
     end
 end})
 
--- == 4. AUTO REVIVE V6 (Final Stable) == --
+-- == FITUR BANTUAN: SCAN NAMA ITEM == --
+-- Gunakan ini kalau masih bingung item apa yang belum keambil
+win:AddButton({text="[SCAN] Cek Nama Item Dekat", callback=function()
+    local found = false
+    print("--- MULAI SCAN ---")
+    if LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart") then
+        local myPos = LocalPlayer.Character.HumanoidRootPart.Position
+        for _, p in pairs(Workspace:GetDescendants()) do
+            if p:IsA("BasePart") and not p.Anchored and p.Name ~= "Terrain" then
+                -- Cari benda kecil unanchored dalam radius 10 meter
+                if (p.Position - myPos).Magnitude < 15 and p.Size.Magnitude < 6 then
+                    if not p.Parent:FindFirstChild("Humanoid") then
+                         -- Kirim Notifikasi ke Layar
+                         game:GetService("StarterGui"):SetCore("SendNotification", {
+                            Title = "Item Ditemukan!",
+                            Text = "Nama: " .. p.Name .. " | Parent: " .. p.Parent.Name,
+                            Duration = 5
+                        })
+                        print("ITEM: " .. p.Name .. " (di dalam folder: " .. p.Parent.Name .. ")")
+                        found = true
+                    end
+                end
+            end
+        end
+    end
+    if not found then
+        game:GetService("StarterGui"):SetCore("SendNotification", {
+            Title = "Scan Selesai",
+            Text = "Tidak ada item drop di dekatmu.",
+            Duration = 3
+        })
+    end
+end})
+
+-- == 4. AUTO REVIVE V6 (Final Responsive) == --
 local reviveOn = false
 win:AddToggle({text="Auto Revive (Fix)", callback=function(t)
     reviveOn = t
@@ -156,15 +188,11 @@ win:AddToggle({text="Auto Revive (Fix)", callback=function(t)
                                 
                                 if promptFound and (tick() - lastRevive >= 1.0) then
                                     if not reviveOn then return end
-                                    
-                                    -- Teleport Anti-Void
                                     local targetPos = tRoot.Position
                                     myRoot.CFrame = CFrame.new(targetPos + Vector3.new(0, 4, 0))
                                     myRoot.AssemblyLinearVelocity = Vector3.new(0,0,0)
-                                    
                                     task.wait(0.2)
                                     if not reviveOn then return end
-                                    
                                     fireproximityprompt(promptFound)
                                     lastRevive = tick()
                                     task.wait(0.5)
@@ -180,7 +208,6 @@ win:AddToggle({text="Auto Revive (Fix)", callback=function(t)
 end})
 
 -- == 5. EXTRAS == --
-
 win:AddSlider({text="HipHeight",min=2,max=50,value=2,callback=function(v)
     if LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("Humanoid") then
         LocalPlayer.Character.Humanoid.HipHeight = v
@@ -251,5 +278,5 @@ win:AddToggle({text="Fly (WASD)",callback=function(t)
     if t then fly() end
 end})
 
-win:AddLabel({text="Smart Collect + Fixed Revive"})
+win:AddLabel({text="Magnet Collect + Fix Revive"})
 lib:Init()
