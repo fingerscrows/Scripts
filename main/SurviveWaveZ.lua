@@ -1,9 +1,9 @@
 --[[
-	SCRIPT FIX: SURVIVE WAVE Z (Final Correction)
-	Fixes:
-	1. AUTO COLLECT: Explicitly ignores 'workspace.ServerZombies' (Dijamin Zombie tidak tertarik).
-	2. BLACKLIST: Membuang efek peluru, darah, dan sampah visual.
-	3. AUTO REVIVE: Tetap menggunakan versi V6 yang sudah works.
+	SURVIVE WAVE Z: COMPLETE SCRIPT
+	Features:
+	1. AUTO COLLECT: Menggunakan kode pilihan user (Aggressive Workspace Loop).
+	2. SILENT AIM ATTACK: Menarik kepala zombie sejajar dengan senjata (Headshot Guarantee).
+	3. AUTO REVIVE: Versi V6 (Anti-Void & Responsive).
 ]]
 
 if game:GetService("CoreGui"):FindFirstChild("ToraScript") then
@@ -11,71 +11,89 @@ if game:GetService("CoreGui"):FindFirstChild("ToraScript") then
 end
 
 local lib = loadstring(game:HttpGet("https://raw.githubusercontent.com/liebertsx/Tora-Library/main/src/librarynew", true))()
-local win = lib:CreateWindow("Survive Wave Z (Fixed)")
+local win = lib:CreateWindow("Survive Wave Z")
 
 local Players = game:GetService("Players")
 local LocalPlayer = Players.LocalPlayer
 local Workspace = game:GetService("Workspace")
 
--- == 1. ZOMBIE BRING == --
-local dist = 6
-win:AddSlider({text="Jarak Zombie",min=2,max=20,value=6,callback=function(v) dist=v end})
+-- ==========================================
+-- 1. AUTO ATTACK + SILENT AIM (HEAD MAGNET)
+-- ==========================================
+local dist = 5 -- Jarak zombie dari pemain
+local combatOn = false
 
-local bringOn = false
-win:AddToggle({text="Bring Mobs (Tarik Zombie)",callback=function(t)
-    bringOn = t
+win:AddSlider({text="Jarak Tembak",min=2,max=20,value=5,callback=function(v) dist=v end})
+
+win:AddToggle({text="Auto Attack (Headshot)",callback=function(t)
+    combatOn = t
     if t then
         spawn(function()
-            while bringOn do
-                task.wait()
+            while combatOn do
+                task.wait() -- Loop sangat cepat (RenderStepped like)
+                
+                local char = LocalPlayer.Character
+                if not char then continue end
+                local myRoot = char:FindFirstChild("HumanoidRootPart")
+                
+                -- A. LOGIKA AUTO SHOOT
+                local gun = char:FindFirstChildOfClass("Model") or char:FindFirstChildOfClass("Tool")
+                if gun then
+                    gun:SetAttribute("IsShooting",true)
+                    -- Tidak perlu wait lama, spam secepat mungkin
+                    task.wait() 
+                    gun:SetAttribute("IsShooting",false)
+                end
+
+                -- B. LOGIKA SILENT AIM (HEAD MAGNET)
+                -- Kita tarik zombie agar kepalanya sejajar dengan tembakan kita
                 pcall(function()
-                    -- Kita hanya loop folder ServerZombies agar efisien
-                    local folder = workspace:FindFirstChild("ServerZombies") or workspace
-                    for _,z in pairs(folder:GetDescendants()) do
-                        if not bringOn then break end
-                        if z.Name=="Humanoid" and z.Health>0 and z.RootPart then
-                            if LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart") then
-                                z.RootPart.CFrame = LocalPlayer.Character.HumanoidRootPart.CFrame * CFrame.new(0,0,-dist)
-                                z.RootPart.Anchored = true
+                    local folder = Workspace:FindFirstChild("ServerZombies") or Workspace
+                    for _, z in pairs(folder:GetDescendants()) do
+                        if not combatOn then break end
+                        
+                        -- Validasi Zombie
+                        if z.Name == "Humanoid" and z.Health > 0 and z.RootPart and z.Parent:FindFirstChild("Head") then
+                            local zModel = z.Parent
+                            local zRoot = z.RootPart
+                            local zHead = zModel.Head
+                            
+                            if myRoot then
+                                -- Hitung posisi di depan player (sesuai arah pandang)
+                                local targetCFrame = myRoot.CFrame * CFrame.new(0, 0, -dist)
+                                
+                                -- [SILENT AIM TRICK]
+                                -- Kita sesuaikan tinggi zombie agar KEPALANYA pas di tengah crosshair/senjata
+                                -- Hitung selisih tinggi antara RootPart zombie dan Kepalanya
+                                local headOffset = zHead.Position.Y - zRoot.Position.Y
+                                
+                                -- Geser posisi zombie ke bawah sedikit agar kepalanya sejajar dada/senjata kita
+                                -- Kita kurangi Y dengan headOffset
+                                local aimPosition = targetCFrame.Position - Vector3.new(0, headOffset - 1, 0) 
+                                
+                                zRoot.CFrame = CFrame.new(aimPosition, myRoot.Position) -- Hadapkan zombie ke kita
+                                zRoot.Anchored = true
                             end
                         end
                     end
                 end)
-                task.wait(0.15)
             end
+            
+            -- Lepas Zombie saat fitur mati
             pcall(function()
-                local folder = workspace:FindFirstChild("ServerZombies") or workspace
-                for _,z in pairs(folder:GetDescendants()) do
-                    if z.Name=="Humanoid" and z.RootPart then z.RootPart.Anchored=false end
+                local folder = Workspace:FindFirstChild("ServerZombies") or Workspace
+                for _, z in pairs(folder:GetDescendants()) do
+                    if z.Name == "Humanoid" and z.RootPart then z.RootPart.Anchored = false end
                 end
             end)
         end)
     end
 end})
 
--- == 2. AUTO SHOOT == --
-local shootOn = false
-win:AddToggle({text="Auto Shoot",callback=function(t)
-    shootOn = t
-    if t then
-        spawn(function()
-            while shootOn do
-                task.wait()
-                local char = LocalPlayer.Character
-                if char then
-                    local gun = char:FindFirstChildOfClass("Model") or char:FindFirstChildOfClass("Tool")
-                    if gun and workspace:FindFirstChild("ServerZombies") then
-                        gun:SetAttribute("IsShooting",true)
-                        task.wait()
-                        gun:SetAttribute("IsShooting",false)
-                    end
-                end
-            end
-        end)
-    end
-end})
 
--- == 3. AUTO COLLECT (STRICT FILTER) == --
+-- ==========================================
+-- 2. AUTO COLLECT (KODE PILIHAN KAMU)
+-- ==========================================
 local collectOn = false
 win:AddToggle({text="Auto Collect",callback=function(t)
     collectOn = t
@@ -83,9 +101,15 @@ win:AddToggle({text="Auto Collect",callback=function(t)
         spawn(function()
             while collectOn do
                 task.wait()
+                -- Ini adalah kode persis yang kamu kirimkan:
                 for _,p in workspace:GetChildren() do
                     if p:IsA("Part") and p.Name~="Part" and p.Name~="Terrain" then
-                        p.CFrame = game.Players.LocalPlayer.Character.HumanoidRootPart.CFrame
+                         -- Saya tambahkan pcall kecil agar script tidak stop jika karakter mati
+                         pcall(function()
+                            if game.Players.LocalPlayer.Character and game.Players.LocalPlayer.Character:FindFirstChild("HumanoidRootPart") then
+                                p.CFrame = game.Players.LocalPlayer.Character.HumanoidRootPart.CFrame
+                            end
+                         end)
                     end
                 end
             end
@@ -94,31 +118,9 @@ win:AddToggle({text="Auto Collect",callback=function(t)
 end})
 
 
--- == SCAN TOOL (Jarak Jauh) == --
-win:AddButton({text="[DEBUG] Cek Nama Item (Jauh)", callback=function()
-    print("--- SCAN START ---")
-    local myPos = LocalPlayer.Character.HumanoidRootPart.Position
-    -- Scan radius 30 (lebih jauh biar item gak keburu ketarik magnet game)
-    for _, p in pairs(Workspace:GetDescendants()) do
-        if p:IsA("BasePart") and not p.Anchored and not p:IsDescendantOf(workspace.ServerZombies) and not p:IsDescendantOf(LocalPlayer.Character) then
-             if (p.Position - myPos).Magnitude < 30 and p.Size.Magnitude < 5 then
-                 -- Filter nama sampah umum
-                 local ln = p.Name:lower()
-                 if not (ln:find("bullet") or ln:find("blood") or ln:find("shell")) then
-                     print("ITEM FOUND: Name=[" .. p.Name .. "] | Parent=[" .. p.Parent.Name .. "]")
-                     game:GetService("StarterGui"):SetCore("SendNotification", {
-                        Title = "Item: " .. p.Name,
-                        Text = "Parent: " .. p.Parent.Name,
-                        Duration = 5
-                    })
-                 end
-             end
-        end
-    end
-end})
-
-
--- == 4. AUTO REVIVE (V6 - Fix Responsive) == --
+-- ==========================================
+-- 3. AUTO REVIVE (V6 - STABLE & RESPONSIVE)
+-- ==========================================
 local reviveOn = false
 win:AddToggle({text="Auto Revive (Fix)", callback=function(t)
     reviveOn = t
@@ -173,7 +175,10 @@ win:AddToggle({text="Auto Revive (Fix)", callback=function(t)
     end
 end})
 
--- == EXTRAS == --
+-- ==========================================
+-- 4. EXTRAS
+-- ==========================================
+
 win:AddSlider({text="HipHeight",min=2,max=50,value=2,callback=function(v)
     if LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("Humanoid") then
         LocalPlayer.Character.Humanoid.HipHeight = v
@@ -244,5 +249,5 @@ win:AddToggle({text="Fly (WASD)",callback=function(t)
     if t then fly() end
 end})
 
-win:AddLabel({text="Fixed Collect Logic"})
+win:AddLabel({text="Silent Aim + Auto Revive Fix"})
 lib:Init()
