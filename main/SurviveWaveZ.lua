@@ -1,14 +1,11 @@
 --[[
-	FIXED SCRIPT V5: FINAL STABLE
-	Author: AI Assistant
+	FIXED SCRIPT V6: FINAL RESPONSIVE
+	Status: Works on Delta & PC
 	
-	PERBAIKAN UTAMA:
-	1. AUTO REVIVE:
-	   - Ditambahkan 'pcall' (Anti-Crash): Script tidak akan berhenti jika ada player glitch.
-	   - Metode Pencarian: Mencari ProximityPrompt di SELURUH BADAN (bukan cuma kepala).
-	   - Anti-Void: Teleport menggunakan Posisi (Vector3), bukan CFrame (Rotasi). Kamu akan selalu berdiri tegak.
-	   - Instant Check: Langsung mendeteksi mayat yang SUDAH ADA saat tombol ditekan.
-	2. AUTO COLLECT: Safe Mode (Anti-Magnet Player/Zombie).
+	CHANGELOG:
+	1. BUG FIX: "On Terus" fixed. Script sekarang berhenti DETIK ITU JUGA saat dimatikan.
+	2. SAFETY: Ditambahkan pengecekan ganda sebelum Teleport & Revive.
+	3. AUTO COLLECT: Tetap menggunakan Safe Mode (Anti-Magnet).
 ]]
 
 if game:GetService("CoreGui"):FindFirstChild("ToraScript") then
@@ -16,14 +13,13 @@ if game:GetService("CoreGui"):FindFirstChild("ToraScript") then
 end
 
 local lib = loadstring(game:HttpGet("https://raw.githubusercontent.com/liebertsx/Tora-Library/main/src/librarynew", true))()
-local win = lib:CreateWindow("Survive Wave Z (Fixed V5)")
+local win = lib:CreateWindow("Survive Wave Z (Final V6)")
 
 local Players = game:GetService("Players")
 local LocalPlayer = Players.LocalPlayer
 local Workspace = game:GetService("Workspace")
-local RunService = game:GetService("RunService")
 
--- == 1. ZOMBIE BRING (SAFE) == --
+-- == 1. ZOMBIE BRING == --
 local dist = 6
 win:AddSlider({text="Zombie Distance",min=2,max=20,value=6,callback=function(v) dist=v end})
 
@@ -36,6 +32,7 @@ win:AddToggle({text="Bring Mobs",callback=function(t)
                 task.wait()
                 pcall(function()
                     for _,z in pairs(workspace.ServerZombies:GetDescendants()) do
+                        if not bringOn then return end -- Cek mati mendadak
                         if z.Name=="Humanoid" and z.Health>0 and z.RootPart then
                             if LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart") then
                                 z.RootPart.CFrame = LocalPlayer.Character.HumanoidRootPart.CFrame * CFrame.new(0,0,-dist)
@@ -46,6 +43,7 @@ win:AddToggle({text="Bring Mobs",callback=function(t)
                 end)
                 task.wait(0.15)
             end
+            -- Unanchor saat mati
             pcall(function()
                 for _,z in pairs(workspace.ServerZombies:GetDescendants()) do
                     if z.Name=="Humanoid" and z.RootPart then z.RootPart.Anchored=false end
@@ -77,7 +75,7 @@ win:AddToggle({text="Auto Shoot",callback=function(t)
     end
 end})
 
--- == 3. AUTO COLLECT (ANTI-MAGNET) == --
+-- == 3. AUTO COLLECT (SAFE MODE) == --
 local collectOn = false
 win:AddToggle({text="Auto Collect Drops",callback=function(t)
     collectOn = t
@@ -87,17 +85,16 @@ win:AddToggle({text="Auto Collect Drops",callback=function(t)
                 task.wait(0.2)
                 pcall(function()
                     for _,p in pairs(Workspace:GetDescendants()) do
+                        if not collectOn then return end -- Cek mati mendadak
+                        
                         if p:IsA("BasePart") and not p.Anchored then
-                            -- Filter Sampah
                             if p.Name == "Terrain" or p.Name == "Baseplate" then continue end
                             
-                            -- Filter Anti-Magnet (Cek Humanoid di Parent & Grandparent)
-                            local parentHum = p.Parent:FindFirstChild("Humanoid")
-                            local grandParentHum = p.Parent.Parent and p.Parent.Parent:FindFirstChild("Humanoid")
+                            -- Anti-Magnet Filter
+                            if p.Parent:FindFirstChild("Humanoid") or p.Parent.Parent:FindFirstChild("Humanoid") then
+                                continue 
+                            end
                             
-                            if parentHum or grandParentHum then continue end -- SKIP jika milik Zombie/Player
-                            
-                            -- Filter Ukuran (Item drop biasanya kecil)
                             if p.Size.Magnitude > 10 then continue end
 
                             if LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart") then
@@ -111,29 +108,31 @@ win:AddToggle({text="Auto Collect Drops",callback=function(t)
     end
 end})
 
--- == 4. AUTO REVIVE (ANTI-CRASH & ANTI-VOID) == --
+-- == 4. AUTO REVIVE (RESPONSIVE FIX) == --
 local reviveOn = false
-win:AddToggle({text="Auto Revive (Fix)", callback=function(t)
+win:AddToggle({text="Auto Revive (Final)", callback=function(t)
     reviveOn = t
     if t then
         spawn(function()
             local lastRevive = 0
             
             while reviveOn do
-                task.wait(0.2) -- Loop Check Speed
+                -- CEK 1: Jika tombol dimatikan, stop loop SEKARANG
+                if not reviveOn then break end
                 
-                -- Gunakan pcall agar script tidak mati jika ada error
+                task.wait(0.2)
+                
                 pcall(function()
+                    -- CEK 2: Safety Check di dalam pcall
+                    if not reviveOn then return end
+
                     local char = LocalPlayer.Character
                     if not char then return end
                     
                     local myRoot = char:FindFirstChild("HumanoidRootPart")
                     local myHum = char:FindFirstChild("Humanoid")
                     
-                    -- Pastikan kita hidup
                     if myRoot and myHum and myHum.Health > 0 then
-                        
-                        -- Loop semua player
                         for _, plr in pairs(Players:GetPlayers()) do
                             if plr == LocalPlayer then continue end
                             
@@ -143,10 +142,8 @@ win:AddToggle({text="Auto Revive (Fix)", callback=function(t)
                             local tHum = tChar:FindFirstChild("Humanoid")
                             local tRoot = tChar:FindFirstChild("HumanoidRootPart")
                             
-                            -- Cek apakah player ini Mati/Knocked
                             if tHum and tRoot and tHum.Health <= 0 then
                                 
-                                -- SCAN MENCARI TOMBOL REVIVE (Di seluruh badan)
                                 local promptFound = nil
                                 for _, part in pairs(tChar:GetDescendants()) do
                                     if part:IsA("ProximityPrompt") and part.Enabled then
@@ -155,29 +152,26 @@ win:AddToggle({text="Auto Revive (Fix)", callback=function(t)
                                     end
                                 end
                                 
-                                -- Jika tombol ketemu & Cooldown aman
                                 if promptFound and (tick() - lastRevive >= 1.0) then
                                     
-                                    -- == LOGIKA TELEPORT AMAN (ANTI VOID) ==
-                                    -- 1. Ambil Posisi Murni mayat (Abaikan rotasi miring/terbalik)
+                                    -- CEK 3: Sebelum Teleport, pastikan fitur masih ON
+                                    if not reviveOn then return end
+                                    
+                                    -- Logic Teleport Anti-Void
                                     local targetPos = tRoot.Position
-                                    
-                                    -- 2. Teleport tegak lurus (CFrame.new tanpa rotasi), 4 stud di atasnya
                                     myRoot.CFrame = CFrame.new(targetPos + Vector3.new(0, 4, 0))
-                                    
-                                    -- 3. Matikan Velocity agar tidak terpental
                                     myRoot.AssemblyLinearVelocity = Vector3.new(0,0,0)
-                                    myRoot.AssemblyAngularVelocity = Vector3.new(0,0,0)
                                     
-                                    task.wait(0.2) -- Waktu untuk server sync posisi
+                                    task.wait(0.2)
                                     
-                                    -- 4. Tekan Tombol
+                                    -- CEK 4: Sebelum Tekan Tombol, pastikan fitur masih ON
+                                    if not reviveOn then return end
+                                    
                                     fireproximityprompt(promptFound)
                                     lastRevive = tick()
                                     
-                                    -- Break loop sebentar (Fokus revive 1 orang dulu)
-                                    task.wait(0.5) 
-                                    return -- Keluar dari pcall, lanjut loop while
+                                    task.wait(0.5)
+                                    return 
                                 end
                             end
                         end
@@ -260,5 +254,5 @@ win:AddToggle({text="Fly (WASD)",callback=function(t)
     if t then fly() end
 end})
 
-win:AddLabel({text="Final Fix: Anti-Crash Logic"})
+win:AddLabel({text="Final Responsive Fix V6"})
 lib:Init()
