@@ -77,55 +77,22 @@ end})
 
 -- == 3. AUTO COLLECT (STRICT FILTER) == --
 local collectOn = false
-win:AddToggle({text="Auto Collect (Anti-Sampah)",callback=function(t)
+win:AddToggle({text="Auto Collect",callback=function(t)
     collectOn = t
     if t then
         spawn(function()
             while collectOn do
-                task.wait(0.1) -- Loop cepat
-                pcall(function()
-                    -- Ambil semua benda di workspace
-                    for _,p in pairs(Workspace:GetDescendants()) do
-                        if not collectOn then break end
-                        
-                        -- == FILTER 1: Harus Benda Fisik & Unanchored (Drop Item pasti jatuh) ==
-                        if p:IsA("BasePart") and not p.Anchored then
-                            
-                            -- == FILTER 2 (PENTING): JANGAN AMBIL ZOMBIE! ==
-                            -- Cek apakah benda ini adalah anak dari folder ServerZombies
-                            if p:IsDescendantOf(workspace.ServerZombies) then continue end
-                            
-                            -- == FILTER 3: JANGAN AMBIL PLAYER SENDIRI ==
-                            if LocalPlayer.Character and p:IsDescendantOf(LocalPlayer.Character) then continue end
-
-                            -- == FILTER 4: BLACKLIST NAMA (Buang Sampah Visual) ==
-                            local lowName = p.Name:lower()
-                            if lowName == "terrain" or lowName == "baseplate" then continue end
-                            if lowName:find("bullet") then continue end -- Buang peluru
-                            if lowName:find("shell") then continue end  -- Buang selongsong
-                            if lowName:find("blood") then continue end  -- Buang darah
-                            if lowName:find("debris") then continue end -- Buang puing
-                            if lowName:find("effect") then continue end -- Buang efek
-                            if lowName:find("beam") then continue end   -- Buang laser
-                            
-                            -- == FILTER 5: KECEPATAN & UKURAN ==
-                            -- Item drop itu DIAM (Velocity ~ 0) dan KECIL.
-                            -- Peluru/VFX bergerak (Velocity > 0).
-                            if p.AssemblyLinearVelocity.Magnitude < 1.0 and p.Size.Magnitude < 5 then
-                                
-                                -- ACTION: Teleport ke Player
-                                if LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart") then
-                                    p.CFrame = LocalPlayer.Character.HumanoidRootPart.CFrame
-                                    p.AssemblyLinearVelocity = Vector3.new(0,0,0) -- Matikan physics biar gak mental
-                                end
-                            end
-                        end
+                task.wait()
+                for _,p in workspace:GetChildren() do
+                    if p:IsA("Part") and p.Name~="Part" and p.Name~="Terrain" then
+                        p.CFrame = game.Players.LocalPlayer.Character.HumanoidRootPart.CFrame
                     end
-                end)
+                end
             end
         end)
     end
 end})
+
 
 -- == SCAN TOOL (Jarak Jauh) == --
 win:AddButton({text="[DEBUG] Cek Nama Item (Jauh)", callback=function()
